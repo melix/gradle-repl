@@ -4,11 +4,16 @@ apply plugin: 'application'
 
 repositories {
     maven { url 'https://repo.gradle.org/gradle/repo' }
+    jcenter()
 }
 
 dependencies {
     compile 'org.gradle:gradle-tooling-api:2.13'
+    compile 'jline:jline:2.12.1'
+    compile 'commons-io:commons-io:2.5'
 }
 
 mainClassName = 'org.gradle.launcher.Main'
 
+sourceCompatibility = 1.8
+targetCompatibility = 1.8

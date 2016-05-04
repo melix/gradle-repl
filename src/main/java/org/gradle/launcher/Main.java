@@ -15,47 +15,64 @@
  */
 package org.gradle.launcher;
 
+import jline.console.ConsoleReader;
+import jline.console.completer.StringsCompleter;
+import org.apache.commons.io.output.WriterOutputStream;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
+import org.gradle.tooling.model.GradleProject;
+import org.gradle.tooling.model.GradleTask;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.Arrays;
+import java.io.OutputStream;
+import java.nio.charset.Charset;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        File projectDirectory = new File(".").getCanonicalFile();
-        ProjectConnection connection = GradleConnector.newConnector()
-                .useGradleUserHomeDir(new File("/home/cchampeau/.gradle"))
-                .useInstallation(new File("/home/cchampeau/DEV/gradle-source-build"))
-                .forProjectDirectory(projectDirectory)
-                .connect();
-        String[] cmd = args;
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        while (cmd!=null) {
-            runBuild(connection, cmd);
-            System.out.print("Command (CTRL+C to exit, enter: " + Arrays.asList(cmd)+")> ");
-            String line = reader.readLine();
-            if (line.length()>0) {
-                cmd = line.split(" +");
-            }
+        ProjectConnection connection = connect(new File(".").getCanonicalFile());
+        GradleProject project = connection.getModel(GradleProject.class);
+        ConsoleReader reader = new ConsoleReader();
+        WriterOutputStream output = new WriterOutputStream(reader.getOutput(), Charset.defaultCharset());
+        reader.setPrompt(project.getName() + " > ");
+        Set<String> tasks = new LinkedHashSet<>();
+        addTasks(project, tasks);
+        reader.addCompleter(new StringsCompleter(tasks));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            runBuild(connection, line.split(" +"), output);
         }
         connection.close();
         System.exit(0);
     }
 
-    private static void runBuild(ProjectConnection connection, String... args) {
+    private static void addTasks(final GradleProject project, final Set<String> tasks) {
+        for (GradleTask task : project.getTasks()) {
+            tasks.add(project.getParent() == null ? task.getName() : task.getPath());
+        }
+        for (GradleProject gradleProject : project.getChildren()) {
+            addTasks(gradleProject, tasks);
+        }
+    }
+
+    private static ProjectConnection connect(final File projectDirectory) {
+        return GradleConnector.newConnector()
+                .useInstallation(new File("/home/cchampeau/DEV/gradle-source-build"))
+                .forProjectDirectory(projectDirectory)
+                .connect();
+    }
+
+    private static void runBuild(ProjectConnection connection, String[] args, OutputStream output) {
         connection
                 .newBuild()
                 .setJvmArguments("-Xmx2g", "-Xms2g")
                 .withArguments("-u")
                 .forTasks(args)
-                .setStandardOutput(System.out)
-                .setStandardError(System.err)
+                .setStandardOutput(output)
+                .setStandardError(output)
                 .setColorOutput(true)
                 .run();
-        System.err.println("Complete");
     }
 }
