@@ -18,6 +18,7 @@ package org.gradle.launcher;
 import jline.console.ConsoleReader;
 import jline.console.completer.StringsCompleter;
 import org.apache.commons.io.output.WriterOutputStream;
+import org.gradle.internal.impldep.com.google.common.collect.Iterables;
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.model.GradleProject;
@@ -27,33 +28,59 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[] args) throws IOException {
+        Iterable<String> gradleArgs = Iterables.concat(Arrays.asList(args), Collections.singleton("-u"));
+        System.out.println("Arguments: " + gradleArgs);
         ProjectConnection connection = connect(new File(".").getCanonicalFile());
-        GradleProject project = connection.getModel(GradleProject.class);
-        ConsoleReader reader = new ConsoleReader();
-        WriterOutputStream output = new WriterOutputStream(reader.getOutput(), Charset.defaultCharset());
-        reader.setPrompt(project.getName() + " > ");
-        Set<String> tasks = new LinkedHashSet<>();
-        addTasks(project, tasks);
-        reader.addCompleter(new StringsCompleter(tasks));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            runBuild(connection, line.split(" +"), output);
-        }
+        System.out.println("Fetching task list...");
+        GradleProject project = fetchGradleProject(gradleArgs, connection);
+        Set<String> tasks = fetchTasks(project);
+        runBuildLoop(gradleArgs, connection, project, tasks);
         connection.close();
         System.exit(0);
     }
 
-    private static void addTasks(final GradleProject project, final Set<String> tasks) {
+    private static void runBuildLoop(final Iterable<String> gradleArgs, final ProjectConnection connection, final GradleProject project, final Set<String> tasks) throws IOException {
+        ConsoleReader reader = new ConsoleReader();
+        WriterOutputStream output = new WriterOutputStream(reader.getOutput(), Charset.defaultCharset());
+        reader.setPrompt(project.getName() + " > ");
+        reader.addCompleter(new StringsCompleter(tasks));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            try {
+                runBuild(connection, gradleArgs, line.split(" +"), output);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private static Set<String> fetchTasks(final GradleProject project) {
+        Set<String> tasks = new LinkedHashSet<>();
+        AtomicInteger projectcount = new AtomicInteger();
+        addTasks(project, tasks, projectcount);
+        System.out.println("Found " + tasks.size() + " tasks in " + projectcount.get() + " projects.");
+        return tasks;
+    }
+
+    private static GradleProject fetchGradleProject(final Iterable<String> gradleArgs, final ProjectConnection connection) {
+        return connection.model(GradleProject.class).withArguments(gradleArgs).get();
+    }
+
+    private static void addTasks(final GradleProject project, final Set<String> tasks, final AtomicInteger projectCount) {
+        projectCount.incrementAndGet();
         for (GradleTask task : project.getTasks()) {
             tasks.add(project.getParent() == null ? task.getName() : task.getPath());
         }
         for (GradleProject gradleProject : project.getChildren()) {
-            addTasks(gradleProject, tasks);
+            addTasks(gradleProject, tasks, projectCount);
         }
     }
 
@@ -64,12 +91,12 @@ public class Main {
                 .connect();
     }
 
-    private static void runBuild(ProjectConnection connection, String[] args, OutputStream output) {
+    private static void runBuild(ProjectConnection connection, Iterable<String> args, String[] tasks, OutputStream output) {
         connection
                 .newBuild()
                 .setJvmArguments("-Xmx2g", "-Xms2g")
-                .withArguments("-u")
-                .forTasks(args)
+                .withArguments(args)
+                .forTasks(tasks)
                 .setStandardOutput(output)
                 .setStandardError(output)
                 .setColorOutput(true)

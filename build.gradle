@@ -8,8 +8,8 @@ repositories {
 }
 
 dependencies {
-    compile 'org.gradle:gradle-tooling-api:2.13'
-    compile 'jline:jline:2.12.1'
+    compile 'org.gradle:gradle-tooling-api:3.0-snapshot-1'
+    compile 'jline:jline:2.14.2'
     compile 'commons-io:commons-io:2.5'
 }
 
