@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger
 val splitter = " +".toRegex()
 
 fun main(args: Array<String>) {
-    val gradleArgs = args union setOf("-u")
+    val gradleArgs = setOf(*args)
     val connection = connect(File(".").canonicalFile)
     showBuildEnvironment(connection)
     println("Fetching task list (this may take a few seconds)...")
